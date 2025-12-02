@@ -3,6 +3,7 @@ import { VendistaApi } from './vendistaApi';
 import { TelegramBotService } from './telegramBot';
 import { CsvLogger } from './csvLogger';
 import { TerminalStatus, TerminalStateHistory } from './types';
+import { formatMoscowTime } from './utils/timeUtils';
 
 // Загрузка переменных окружения
 dotenv.config();
@@ -36,6 +37,9 @@ const telegramBot = new TelegramBotService(telegramToken, telegramGroupId, csvLo
 
 // Хранение истории статусов терминалов
 const terminalHistory: Map<number, TerminalStateHistory> = new Map();
+
+// Флаг первой проверки после запуска (чтобы не записывать ложные изменения при перезапуске)
+let isFirstCheck = true;
 
 // Инициализация истории для каждого терминала
 terminalIds.forEach(id => {
@@ -88,25 +92,6 @@ async function checkTerminalStatus(terminalId: number): Promise<void> {
         offlineDuration = formatDuration(durationMs);
       }
 
-      // Записываем в CSV
-      await csvLogger.logStatusChange({
-        terminalId,
-        timestamp: now,
-        status: currentStatus,
-        statusName: CsvLogger.getStatusName(currentStatus),
-        offlineDuration,
-      });
-
-      // Отправляем уведомление в Telegram, если терминал ушел со связи или вернулся
-      if (isGoneOffline || isBackOnline) {
-        await telegramBot.sendStatusChangeNotification(
-          terminalId,
-          previousStatus,
-          currentStatus,
-          isBackOnline
-        );
-      }
-
       // Обновляем историю
       history.previousStatus = previousStatus;
       history.currentStatus = currentStatus;
@@ -125,14 +110,46 @@ async function checkTerminalStatus(terminalId: number): Promise<void> {
       }
       // Если терминал меняет один офлайн статус на другой, не обновляем offlineSince
 
-      console.log(
-        `Терминал ${terminalId}: статус изменился с ${CsvLogger.getStatusName(previousStatus)} на ${CsvLogger.getStatusName(currentStatus)}${offlineDuration ? `, не был на связи: ${offlineDuration}` : ''}`
-      );
+      // При первой проверке после запуска не записываем изменения в CSV и не отправляем уведомления,
+      // так как мы не знаем, когда реально произошло изменение (приложение могло быть закрыто)
+      if (!isFirstCheck) {
+        // Записываем в CSV только если это не первая проверка
+        await csvLogger.logStatusChange({
+          terminalId,
+          timestamp: now,
+          status: currentStatus,
+          statusName: CsvLogger.getStatusName(currentStatus),
+          offlineDuration,
+        });
+
+        // Отправляем уведомление в Telegram, если терминал ушел со связи или вернулся
+        if (isGoneOffline || isBackOnline) {
+          await telegramBot.sendStatusChangeNotification(
+            terminalId,
+            previousStatus,
+            currentStatus,
+            isBackOnline
+          );
+        }
+
+        const moscowTime = formatMoscowTime(now);
+        console.log(
+          `[${moscowTime} МСК] Терминал ${terminalId}: статус изменился с ${CsvLogger.getStatusName(previousStatus)} на ${CsvLogger.getStatusName(currentStatus)}${offlineDuration ? `, не был на связи: ${offlineDuration}` : ''}`
+        );
+      } else {
+        // При первой проверке просто синхронизируем состояние без записи в CSV
+        const moscowTime = formatMoscowTime(now);
+        console.log(
+          `[${moscowTime} МСК] Терминал ${terminalId}: синхронизация состояния при запуске - текущий статус: ${CsvLogger.getStatusName(currentStatus)}`
+        );
+      }
     } else {
-      console.log(`Терминал ${terminalId}: статус не изменился (${CsvLogger.getStatusName(currentStatus)})`);
+      const moscowTime = formatMoscowTime(new Date());
+      console.log(`[${moscowTime} МСК] Терминал ${terminalId}: статус не изменился (${CsvLogger.getStatusName(currentStatus)})`);
     }
   } catch (error) {
-    console.error(`Ошибка проверки статуса терминала ${terminalId}:`, error);
+    const moscowTime = formatMoscowTime(new Date());
+    console.error(`[${moscowTime} МСК] Ошибка проверки статуса терминала ${terminalId}:`, error);
   }
 }
 
@@ -167,25 +184,37 @@ function formatDuration(ms: number): string {
  * Проверка всех терминалов
  */
 async function checkAllTerminals(): Promise<void> {
-  console.log(`\n[${new Date().toISOString()}] Проверка статусов терминалов...`);
+  const moscowTime = formatMoscowTime(new Date());
+  const checkType = isFirstCheck ? ' (первая проверка после запуска)' : '';
+  console.log(`\n[${moscowTime} МСК] Проверка статусов терминалов${checkType}...`);
   
   const promises = terminalIds.map(id => checkTerminalStatus(id));
   await Promise.all(promises);
+  
+  // После первой проверки сбрасываем флаг
+  if (isFirstCheck) {
+    isFirstCheck = false;
+    const syncTime = formatMoscowTime(new Date());
+    console.log(`[${syncTime} МСК] Синхронизация завершена. Мониторинг изменений активен.`);
+  }
 }
 
 /**
  * Инициализация и запуск мониторинга
  */
 async function startMonitoring(): Promise<void> {
-  console.log('Запуск мониторинга терминалов Vendista...');
-  console.log(`Мониторинг терминалов: ${terminalIds.join(', ')}`);
+  const startTime = formatMoscowTime(new Date());
+  console.log(`[${startTime} МСК] Запуск мониторинга терминалов Vendista...`);
+  console.log(`[${startTime} МСК] Мониторинг терминалов: ${terminalIds.join(', ')}`);
 
   // Первоначальная авторизация
   try {
     await vendistaApi.authenticate();
-    console.log('Авторизация в Vendista API успешна');
+    const authTime = formatMoscowTime(new Date());
+    console.log(`[${authTime} МСК] Авторизация в Vendista API успешна`);
   } catch (error) {
-    console.error('Ошибка авторизации:', error);
+    const errorTime = formatMoscowTime(new Date());
+    console.error(`[${errorTime} МСК] Ошибка авторизации:`, error);
     process.exit(1);
   }
 
@@ -195,22 +224,26 @@ async function startMonitoring(): Promise<void> {
   // Запуск периодической проверки каждую минуту
   setInterval(checkAllTerminals, 60 * 1000);
 
-  console.log('Мониторинг запущен. Проверка статусов каждую минуту.');
+  const readyTime = formatMoscowTime(new Date());
+  console.log(`[${readyTime} МСК] Мониторинг запущен. Проверка статусов каждую минуту.`);
 }
 
 // Обработка ошибок
 process.on('unhandledRejection', (error) => {
-  console.error('Необработанная ошибка:', error);
+  const errorTime = formatMoscowTime(new Date());
+  console.error(`[${errorTime} МСК] Необработанная ошибка:`, error);
 });
 
 process.on('SIGINT', () => {
-  console.log('\nЗавершение работы...');
+  const exitTime = formatMoscowTime(new Date());
+  console.log(`\n[${exitTime} МСК] Завершение работы...`);
   process.exit(0);
 });
 
 // Запуск приложения
 startMonitoring().catch(error => {
-  console.error('Критическая ошибка при запуске:', error);
+  const errorTime = formatMoscowTime(new Date());
+  console.error(`[${errorTime} МСК] Критическая ошибка при запуске:`, error);
   process.exit(1);
 });
 

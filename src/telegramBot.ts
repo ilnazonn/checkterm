@@ -2,6 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { TerminalStatus } from './types';
 import { CsvLogger } from './csvLogger';
 import { VendistaApi } from './vendistaApi';
+import { formatMoscowTime } from './utils/timeUtils';
 import * as fs from 'fs';
 
 export class TelegramBotService {
@@ -59,10 +60,11 @@ export class TelegramBotService {
         await this.bot.sendDocument(msg.chat.id, csvPath, {
           caption: 'Лог статусов терминалов',
         });
-      } catch (error) {
-        console.error('Ошибка отправки CSV файла:', error);
-        this.bot.sendMessage(msg.chat.id, `Ошибка отправки файла: ${error}`);
-      }
+    } catch (error) {
+      const moscowTime = formatMoscowTime(new Date());
+      console.error(`[${moscowTime} МСК] Ошибка отправки CSV файла:`, error);
+      this.bot.sendMessage(msg.chat.id, `Ошибка отправки файла: ${error}`);
+    }
     });
 
     // Команда помощи
@@ -98,9 +100,11 @@ export class TelegramBotService {
 
     try {
       await this.bot.sendMessage(this.groupId, message);
-      console.log(`Отправлено уведомление в Telegram: ${message}`);
+      const moscowTime = formatMoscowTime(new Date());
+      console.log(`[${moscowTime} МСК] Отправлено уведомление в Telegram: ${message}`);
     } catch (error) {
-      console.error('Ошибка отправки уведомления в Telegram:', error);
+      const moscowTime = formatMoscowTime(new Date());
+      console.error(`[${moscowTime} МСК] Ошибка отправки уведомления в Telegram:`, error);
     }
   }
 
@@ -119,7 +123,8 @@ export class TelegramBotService {
     try {
       await this.bot.sendMessage(chatId, message);
     } catch (error) {
-      console.error('Ошибка отправки статуса терминала:', error);
+      const moscowTime = formatMoscowTime(new Date());
+      console.error(`[${moscowTime} МСК] Ошибка отправки статуса терминала:`, error);
     }
   }
 

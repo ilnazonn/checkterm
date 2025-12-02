@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createObjectCsvWriter } from 'csv-writer';
 import { TerminalStateRecord, TerminalStatus } from './types';
+import { formatMoscowTime } from './utils/timeUtils';
 
 export class CsvLogger {
   private csvFilePath: string;
@@ -34,13 +35,14 @@ export class CsvLogger {
    */
   async logStatusChange(record: TerminalStateRecord): Promise<void> {
     try {
+      const moscowTime = formatMoscowTime(record.timestamp);
       const logMessage = record.offlineDuration 
-        ? `Записано в CSV: Терминал ${record.terminalId}, статус ${record.statusName} в ${record.timestamp.toISOString()}, не был на связи: ${record.offlineDuration}`
-        : `Записано в CSV: Терминал ${record.terminalId}, статус ${record.statusName} в ${record.timestamp.toISOString()}`;
+        ? `Записано в CSV: Терминал ${record.terminalId}, статус ${record.statusName} в ${moscowTime} (МСК), не был на связи: ${record.offlineDuration}`
+        : `Записано в CSV: Терминал ${record.terminalId}, статус ${record.statusName} в ${moscowTime} (МСК)`;
 
       await this.csvWriter.writeRecords([{
         terminalId: record.terminalId,
-        timestamp: record.timestamp.toISOString(),
+        timestamp: moscowTime,
         status: record.status,
         statusName: record.statusName,
         offlineDuration: record.offlineDuration || '',
